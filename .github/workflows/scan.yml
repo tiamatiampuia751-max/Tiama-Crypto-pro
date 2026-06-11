@@ -1,0 +1,31 @@
+name: Manual Scanner
+on:
+  workflow_dispatch:
+    inputs:
+      timeframe:
+        description: 'Timeframe'
+        required: true
+        default: '15m'
+        type: choice
+        options: ['5m','15m','1h','4h','1d']
+permissions:
+  contents: write
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - run: npm install axios technicalindicators
+      - run: node scanner.js
+        env:
+          SCAN_TIMEFRAME: ${{ inputs.timeframe }}
+      - name: Commit
+        run: |
+          git config user.name 'bot'
+          git config user.email 'bot@github.com'
+          git add signals.json
+          git commit -m "Scan" || exit 0
+          git push
