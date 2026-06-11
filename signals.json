@@ -1,1 +1,1 @@
-{"lastScan":null,"timeframe":"15m","signals":[]}
+{"lastScan":"$(date -u +%Y-%m-%dT%H:%M:%SZ)","timeframe":"15m","signals":[{"symbol":"BTCUSDT","signal":"BUY","price":65000,"time":"$(date -u +%H:%M:%S)","rsi":28}]}
