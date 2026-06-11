@@ -1,0 +1,104 @@
+const axios = require('axios');
+const { EMA, RSI, MACD } = require('technicalindicators');
+
+const timeframe = process.env.SCAN_TIMEFRAME || '15m';
+const MIN_VOLUME = 1000000; // $1M volume chauh
+
+async function getTopPairs() {
+  const res = await axios.get('https://api.binance.com/api/v3/ticker/24hr');
+  return res.data
+    .filter(t => t.symbol.endsWith('USDT') && parseFloat(t.quoteVolume) > MIN_VOLUME)
+    .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
+    .slice(0, 50)
+    .map(t => t.symbol);
+}
+
+async function getKlines(symbol, interval) {
+  const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=100`;
+  const res = await axios.get(url);
+  return res.data.map(d => ({
+    close: parseFloat(d[4]),
+    high: parseFloat(d[2]),
+    low: parseFloat(d[3]),
+    volume: parseFloat(d[5])
+  }));
+}
+
+function checkSignal(candles) {
+  const closes = candles.map(c => c.close);
+  const highs = candles.map(c => c.high);
+  const lows = candles.map(c => c.low);
+  
+  const ema9 = EMA.calculate({ period: 9, values: closes });
+  const ema21 = EMA.calculate({ period: 21, values: closes });
+  const rsi = RSI.calculate({ period: 14, values: closes });
+  const macd = MACD.calculate({
+    values: closes,
+    fastPeriod: 12,
+    slowPeriod: 26,
+    signalPeriod: 9,
+    SimpleMAOscillator: false,
+    SimpleMASignal: false
+  });
+
+  const i = closes.length - 1;
+  const e9 = ema9[ema9.length - 1];
+  const e21 = ema21[ema21.length - 1];
+  const r = rsi[rsi.length - 1];
+  const m = macd[macd.length - 1];
+  
+  // 5/5 LONG: EMA9 > EMA21 + RSI > 50 + MACD > Signal + MACD > 0 + Close > EMA9
+  const longScore = [
+    e9 > e21,
+    r > 50,
+    m.MACD > m.signal,
+    m.MACD > 0,
+    closes[i] > e9
+  ].filter(Boolean).length;
+  
+  if (longScore === 5) return { type: 'LONG', score: 5 };
+  
+  // 5/5 SHORT: EMA9 < EMA21 + RSI < 50 + MACD < Signal + MACD < 0 + Close < EMA9
+  const shortScore = [
+    e9 < e21,
+    r < 50,
+    m.MACD < m.signal,
+    m.MACD < 0,
+    closes[i] < e9
+  ].filter(Boolean).length;
+  
+  if (shortScore === 5) return { type: 'SHORT', score: 5 };
+  
+  return null;
+}
+
+async function main() {
+  const pairs = await getTopPairs();
+  const signals = [];
+  
+  for (const symbol of pairs) {
+    try {
+      const candles = await getKlines(symbol, timeframe);
+      const signal = checkSignal(candles);
+      if (signal) {
+        signals.push({
+          symbol,
+          type: signal.type,
+          score: signal.score,
+          price: candles[candles.length - 1].close
+        });
+      }
+    } catch (e) {}
+  }
+  
+  const fs = require('fs');
+  fs.writeFileSync('signals.json', JSON.stringify({
+    lastScan: new Date().toISOString(),
+    timeframe: timeframe,
+    signals: signals
+  }, null, 2));
+  
+  console.log(`Found ${signals.length} signals`);
+}
+
+main();
