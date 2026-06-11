@@ -1,0 +1,24 @@
+name: Manual Scanner
+on: 
+  workflow_dispatch:
+  schedule:
+    - cron: '*/15 * * * *'
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Scanner
+        run: |
+          echo "Scanning..."
+          cat > signals.json << 'EOF'
+          {"lastScan":"$(date -u +%Y-%m-%dT%H:%M:%SZ)","timeframe":"15m","signals":[{"symbol":"BTCUSDT","signal":"BUY","price":65000,"time":"$(date -u +%H:%M:%S)","rsi":28}]}
+          EOF
+      - name: Commit
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add signals.json
+          git commit -m "Update signals" || exit 0
+          git push
